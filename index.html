@@ -98,10 +98,11 @@
     cursor:pointer;user-select:none;}
   .show-completed-toggle input{margin:0;}
 
-  .stepper{display:flex;gap:4px;align-items:center;}
-  .stepper button{width:20px;height:20px;border-radius:5px;border:1px solid var(--border);background:var(--surface-2);
-    color:var(--text-muted);font-family:var(--font-mono);font-size:.72rem;line-height:1;cursor:pointer;padding:0;}
-  .stepper button:hover{color:var(--text);}
+  .stepper{display:flex;gap:10px;align-items:center;touch-action:manipulation;}
+  .stepper button{width:36px;height:36px;border-radius:9px;border:1px solid var(--border);background:var(--surface-2);
+    color:var(--text-muted);font-family:var(--font-mono);font-size:1rem;line-height:1;cursor:pointer;padding:0;
+    touch-action:manipulation;}
+  .stepper button:active{background:var(--accent-soft);color:var(--accent-strong);}
   .tile.done{opacity:.55;}
   .tile.done .label{text-decoration:line-through;}
 
@@ -504,6 +505,7 @@
       plus.title='Increase count';
       plus.addEventListener('click', function(ev){ ev.stopPropagation(); setCount(i.id,1); });
       stepper.appendChild(minus); stepper.appendChild(plus);
+      stepper.addEventListener('click', function(ev){ ev.stopPropagation(); });
 
       tile.appendChild(label); tile.appendChild(countRow); tile.appendChild(stepper);
       tile.addEventListener('click', function(){ tap(i.id); });
