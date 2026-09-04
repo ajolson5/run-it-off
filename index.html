@@ -179,6 +179,8 @@
 
   footer.note{color:var(--text-muted);font-size:.72rem;text-align:center;padding-top:4px;}
 </style>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 </head>
 <body>
 
@@ -264,7 +266,9 @@
     headerExpanded: false,
     manageSearch: '',
     manageSectionFilter: 'all',
-    showCompleted: false
+    showCompleted: false,
+    updatedAt: 0,
+    lastSyncAt: 0
   };
 
   function loadState(){
@@ -283,12 +287,88 @@
           state.headerExpanded = !!parsed.headerExpanded;
           state.manageSectionFilter = parsed.manageSectionFilter || 'all';
           state.showCompleted = !!parsed.showCompleted;
+          state.updatedAt = parsed.updatedAt || 0;
+          state.lastSyncAt = parsed.lastSyncAt || 0;
         }
       }
     }catch(e){}
   }
-  function saveState(){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }catch(e){} }
+  var applyingRemote = false;
+  function saveState(){
+    if(!applyingRemote) state.updatedAt = Date.now();
+    try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }catch(e){}
+  }
   loadState();
+
+  // ---- Firebase sync (best-effort; app works fully offline without it) ----
+  var FIREBASE_CONFIG = {
+    apiKey: "AIzaSyAcQBKKHOUj1JVrqztGtAog6Ry3qEqkwfc",
+    authDomain: "run-it-off-2cac7.firebaseapp.com",
+    projectId: "run-it-off-2cac7",
+    storageBucket: "run-it-off-2cac7.firebasestorage.app",
+    messagingSenderId: "1043220718587",
+    appId: "1:1043220718587:web:4940b36d5e9422e0ac215e"
+  };
+  var SYNC_DOC_ID = "3f4ba758852841cf92e6aaf9f574272a";
+  var AUTO_SYNC_INTERVAL_MS = 12 * 3600 * 1000; // ~twice a day
+  var syncDocRef = null;
+  var syncStatus = {syncing:false, lastResult:null};
+  try{
+    if(window.firebase){
+      firebase.initializeApp(FIREBASE_CONFIG);
+      syncDocRef = firebase.firestore().collection('runitoff').doc(SYNC_DOC_ID);
+    }
+  }catch(e){ syncStatus.lastResult = 'init failed'; }
+
+  function applyRemoteState(cloud){
+    applyingRemote = true;
+    if(Array.isArray(cloud.items) && cloud.items.length) state.items = cloud.items;
+    if(Array.isArray(cloud.sections) && cloud.sections.length) state.sections = cloud.sections;
+    state.progress = cloud.progress || {};
+    state.periodKeys = cloud.periodKeys || {daily:null,weekly:null,monthly:null};
+    state.milesOwed = typeof cloud.milesOwed==='number' ? cloud.milesOwed : 0;
+    state.log = cloud.log || [];
+    state.lastAction = cloud.lastAction || null;
+    state.headerExpanded = !!cloud.headerExpanded;
+    state.manageSectionFilter = cloud.manageSectionFilter || 'all';
+    state.showCompleted = !!cloud.showCompleted;
+    state.updatedAt = cloud.updatedAt || Date.now();
+    saveState();
+    applyingRemote = false;
+  }
+
+  function runSync(){
+    if(!syncDocRef) return;
+    if(syncStatus.syncing) return;
+    syncStatus.syncing = true;
+    renderAll();
+    syncDocRef.get().then(function(doc){
+      var cloudUpdatedAt = doc.exists ? (doc.data().updatedAt||0) : 0;
+      var localUpdatedAt = state.updatedAt || 0;
+      if(!doc.exists || localUpdatedAt >= cloudUpdatedAt){
+        return syncDocRef.set(state).then(function(){ return 'uploaded'; });
+      } else {
+        applyRemoteState(doc.data());
+        return Promise.resolve('downloaded');
+      }
+    }).then(function(action){
+      syncStatus.syncing = false;
+      syncStatus.lastResult = action;
+      state.lastSyncAt = Date.now();
+      saveState(); renderAll();
+    }).catch(function(err){
+      syncStatus.syncing = false;
+      syncStatus.lastResult = 'error';
+      renderAll();
+    });
+  }
+
+  function maybeAutoSync(){
+    if(!syncDocRef) return;
+    if(Date.now() - (state.lastSyncAt||0) > AUTO_SYNC_INTERVAL_MS) runSync();
+  }
+  setTimeout(maybeAutoSync, 3000);
+  setInterval(maybeAutoSync, 3600*1000);
 
   // ---- day boundary = 4:00am local ----
   function shifted(){ return new Date(Date.now() - 4*3600*1000); }
@@ -739,6 +819,27 @@
       }).catch(function(){ refreshBtn.textContent = 'Failed — try again'; });
     });
     appPanel.appendChild(refreshBtn);
+
+    var syncBtn = document.createElement('button'); syncBtn.type='button'; syncBtn.className='toggle-btn';
+    syncBtn.textContent = syncStatus.syncing ? 'Syncing…' : 'Sync now';
+    syncBtn.disabled = !syncDocRef || syncStatus.syncing;
+    syncBtn.addEventListener('click', function(){ runSync(); });
+    appPanel.appendChild(syncBtn);
+
+    var syncNote = document.createElement('span'); syncNote.style.fontSize='.72rem'; syncNote.style.color='var(--text-muted)';
+    if(!syncDocRef){
+      syncNote.textContent = 'Sync not connected.';
+    } else if(syncStatus.syncing){
+      syncNote.textContent = 'Syncing…';
+    } else if(state.lastSyncAt){
+      var d = new Date(state.lastSyncAt);
+      syncNote.textContent = 'Last synced '+(d.getMonth()+1)+'/'+d.getDate()+' '+pad(d.getHours())+':'+pad(d.getMinutes())
+        + (syncStatus.lastResult ? ' ('+syncStatus.lastResult+')' : '');
+    } else {
+      syncNote.textContent = 'Not synced yet — auto-syncs about twice a day, or tap Sync now.';
+    }
+    appPanel.appendChild(syncNote);
+
     wrap.appendChild(appPanel);
 
     return wrap;
