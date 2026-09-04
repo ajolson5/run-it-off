@@ -728,6 +728,19 @@
       });
     },0);
 
+    var appH = document.createElement('h2'); appH.textContent='App'; wrap.appendChild(appH);
+    var appPanel = document.createElement('div'); appPanel.className='panel row-flex';
+    var refreshBtn = document.createElement('button'); refreshBtn.type='button'; refreshBtn.className='toggle-btn';
+    refreshBtn.textContent = 'Check for updates';
+    refreshBtn.addEventListener('click', function(){
+      refreshBtn.textContent = 'Checking…';
+      fetch(location.href, {cache:'no-store'}).then(function(r){ return r.text(); }).then(function(html){
+        document.open(); document.write(html); document.close();
+      }).catch(function(){ refreshBtn.textContent = 'Failed — try again'; });
+    });
+    appPanel.appendChild(refreshBtn);
+    wrap.appendChild(appPanel);
+
     return wrap;
   }
 
